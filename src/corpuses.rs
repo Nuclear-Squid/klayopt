@@ -12,7 +12,7 @@ struct TmpCorpusData {
     trigrams: HashMap<String, f32>,
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CorpusData {
     name:     String,
     symbols:  HashMap<char, f32>,

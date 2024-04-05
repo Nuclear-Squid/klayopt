@@ -1,0 +1,16 @@
+corpuses = ["fr.json", "en.json"]
+
+[[spec]]
+finger = "IndexFinger"
+[spec.thresholds]
+min_load = 12.0
+max_load = 19.0
+max_sfu  = 0.1
+
+
+[[spec]]
+finger = "RegularFinger"
+[spec.thresholds]
+min_load = 12.0
+max_load = 19.0
+max_sfu  = 0.1

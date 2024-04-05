@@ -2,50 +2,17 @@ pub mod corpuses;
 pub mod brute_force;
 
 use corpuses::CorpusData;
-use brute_force::{ BruteForceSpec, FingerType, Thresholds, brute_force_all, };
+// use brute_force::{ BruteForceSpec, BruteForceOutput, FingerType, Thresholds, brute_force_all, };
+
+#[allow(dead_code)]
+fn good_heatmap_index(mut index: Vec<char>, corpus_data: &CorpusData) -> bool {
+    index.sort_by(|a, b| corpus_data.get_symbol(a).partial_cmp(&corpus_data.get_symbol(b)).unwrap());
+    corpus_data.get_symbol(&index[1]) < 1.3
+}
 
 fn main() -> Result<(), main_error::MainError> {
-    let corpus_fr = CorpusData::from_json("fr.json")?;
-    let corpus_en = CorpusData::from_json("en.json")?;
-    let all_corpuses = vec![&corpus_fr, &corpus_en];
-
-    let index = BruteForceSpec {
-        corpuses: all_corpuses.clone(),
-        finger: FingerType::IndexFinger,
-        must_have_char: String::from("td"),
-        must_not_have_char: String::from("j"),
-        thresholds: Thresholds {
-            min_load: 14.,
-            max_load: 19.,
-            max_sfu: 0.1,
-        },
-    };
-
-    let index2 = BruteForceSpec {
-        corpuses: all_corpuses.clone(),
-        finger: FingerType::IndexFinger,
-        must_have_char: String::from("nh"),
-        must_not_have_char: String::from(""),
-        thresholds: Thresholds {
-            min_load: 14.,
-            max_load: 19.,
-            max_sfu: 0.1,
-        },
-    };
-
-    let finger = BruteForceSpec {
-        corpuses: all_corpuses.clone(),
-        finger: FingerType::RegularFinger,
-        must_have_char: String::from("o"),
-        must_not_have_char: String::from(""),
-        thresholds: Thresholds {
-            min_load: 12.,
-            max_load: 19.,
-            max_sfu: 0.1,
-        },
-    };
-
-    println!("{}", brute_force_all([index, index2, finger]));
+    let specs = brute_force::SpecConfig::from_toml("spec.toml");
+    println!("{}", specs.brute_force_all());
 
     Ok(())
 }
