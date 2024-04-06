@@ -1,6 +1,8 @@
+use std::rc::Rc;
+use std::ops::Deref;
 use std::path::Path;
 use serde::Deserialize;
-use itertools::Itertools;
+use itertools::iproduct;
 use crate::corpuses::CorpusData;
 
 #[derive(Debug, Deserialize)]
@@ -47,7 +49,7 @@ pub struct BruteForceOutputElement {
 }
 
 #[derive(Clone)]
-pub struct BruteForceOutput(pub Vec<Vec<BruteForceOutputElement>>);
+pub struct BruteForceOutput(pub Vec<Vec<Rc<BruteForceOutputElement>>>);
 
 impl Default for Thresholds {
     fn default() -> Self {
@@ -80,15 +82,16 @@ impl SpecConfig {
 impl BruteForceOutput {
     pub fn new() -> Self { BruteForceOutput(Vec::new()) }
     pub fn with_capacity(size: usize) -> Self { BruteForceOutput(Vec::with_capacity(size)) }
-    pub fn iter(&self) -> std::slice::Iter<'_, Vec<BruteForceOutputElement>> { self.0.iter() }
+    pub fn iter(&self) -> std::slice::Iter<'_, Vec<Rc<BruteForceOutputElement>>> { self.0.iter() }
 }
 
-impl FromIterator<Vec<BruteForceOutputElement>> for BruteForceOutput {
-    fn from_iter<I: IntoIterator<Item=Vec<BruteForceOutputElement>>>(iter: I) -> Self {
+impl FromIterator<Vec<Rc<BruteForceOutputElement>>> for BruteForceOutput {
+    fn from_iter<I: IntoIterator<Item=Vec<Rc<BruteForceOutputElement>>>>(iter: I) -> Self {
         let mut rv = Self::new();
 
         for x in iter {
             rv.0.push(x.to_vec());
+            // rv.0.push(x);
         }
 
         rv
@@ -96,7 +99,7 @@ impl FromIterator<Vec<BruteForceOutputElement>> for BruteForceOutput {
 }
 
 impl<'a> BruteForceSpec {
-    pub fn brute_force(&self, corpuses: &[CorpusData]) -> BruteForceOutput {
+    pub fn brute_force(&self, corpuses: &[CorpusData]) -> Vec<Rc<BruteForceOutputElement>> {
         let mut char_buffer = vec!['\0'; self.finger as usize];
         let mut load_matrix = vec![vec![0.; corpuses.len()]; self.finger as usize];
         let mut sfu_matrix  = vec![vec![0.; corpuses.len()]; self.finger as usize];
@@ -107,7 +110,7 @@ impl<'a> BruteForceSpec {
             calculate_next_sfu_row(&char_buffer, &corpuses, &mut sfu_matrix, i, c, self.thresholds.max_sfu);
         }
 
-        let mut output = BruteForceOutput::with_capacity(500);
+        let mut output = Vec::with_capacity(500);
 
         brute_force_inner(
             &mut output,
@@ -127,6 +130,7 @@ impl<'a> BruteForceSpec {
 
 impl std::fmt::Display for BruteForceOutputElement {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+
         write!(fmt, "[")?;
         for c in self.chars.iter() {
             write!(fmt, "{c}")?;
@@ -137,15 +141,13 @@ impl std::fmt::Display for BruteForceOutputElement {
             write!(fmt, "   ")?;
         }
 
-        let mut first_iter = true;
+        let mut iter = self.load_per_corpus.iter().zip(self.sfu_per_corpus.iter());
 
-        for (load, sfu) in self.load_per_corpus.iter().zip(self.sfu_per_corpus.iter()) {
-            if !first_iter {
-                write!(fmt, "  |  ")?;
-            }
-            first_iter = false;
-            if *load < 10. { write!(fmt, " ")?; }
-            write!(fmt, "{load:.3}, {sfu:.3}")?;
+        let (first_load, first_sfu) = iter.next().unwrap();
+        write!(fmt, "{first_load:>#6.3}, {first_sfu:.3}")?;
+
+        for (load, sfu) in iter {
+            write!(fmt, "  |  {load:>#6.3}, {sfu:.3}")?;
         }
 
         Ok(())
@@ -155,10 +157,10 @@ impl std::fmt::Display for BruteForceOutputElement {
 impl std::fmt::Display for BruteForceOutput {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         for output in self.0.iter() {
-            if output.len() > 1 { write!(fmt, "\n")?; }
+            writeln!(fmt)?;
 
             for finger in output.iter() {
-                println!("{finger}");
+                writeln!(fmt, "{finger}")?;
             }
         }
 
@@ -168,10 +170,7 @@ impl std::fmt::Display for BruteForceOutput {
 
 impl SpecConfig {
     pub fn brute_force_all(&self) -> BruteForceOutput {
-        use std::rc::Rc;
-        use std::ops::Deref;
-
-        let mut buffer = Vec::<Rc<BruteForceOutput>>::new();
+        let mut buffer = Vec::<Rc<Vec<Rc<BruteForceOutputElement>>>>::new();
 
         'main_loop: for (i, spec) in self.specs.iter().enumerate() {
             for (j, previous_spec) in self.specs[..i].iter().enumerate() {
@@ -185,28 +184,54 @@ impl SpecConfig {
             buffer.push(Rc::new(res));
         }
 
-        let no_char_in_common = |vec: &Vec<&Vec<BruteForceOutputElement>>| -> bool {
-            vec.iter()
-                .map(|out| out[0].chars.iter())
-                .multi_cartesian_product()
-                .all(|v| v[0] != v[1])
-        };
+        let mut output = BruteForceOutput::with_capacity(500);
+        let mut chars_buffer = vec!['\0'; buffer.iter().map(|v| v.deref().len()).sum()];
+        let mut indexes = vec![0; buffer.len()];
 
-        BruteForceOutput(
-            buffer
-            .iter()
-            .map(|x| x.deref().iter())
-            .multi_cartesian_product()
-            .filter(no_char_in_common)
-            // This is so fucking stupid
-            .map(|v| v.into_iter().map(|v2| v2.clone()).flatten().collect())
-            .collect()
-        )
+        get_valid_combinations(&buffer, &mut output, 0, &mut indexes, &mut chars_buffer, 0);
+
+        output
+    }
+}
+
+fn get_valid_combinations(
+    fingers: &[Rc<Vec<Rc<BruteForceOutputElement>>>],
+    output: &mut BruteForceOutput,
+    current_finger: usize,
+    indexes: &mut[usize],
+    chars_buffer: &mut[char],
+    len_chars_buffer: usize,
+) {
+    for chars in fingers[current_finger][indexes[current_finger]..].iter() {
+        let mut common_chars_iter = iproduct!(
+            chars_buffer[..len_chars_buffer].iter(),
+            chars.chars.iter()
+        );
+
+        if common_chars_iter.any(|(c1, c2)| c1 == c2) {
+            indexes[current_finger] += 1;
+            continue
+        }
+
+        if current_finger == fingers.len() - 2 {
+            output.0.push(
+                fingers.iter().zip(indexes.iter()).map(|(f, i)| f[*i].clone()).collect()
+            );
+            continue
+        }
+
+        for (i, c) in chars.chars.iter().enumerate() {
+            chars_buffer[len_chars_buffer + i] = *c;
+        }
+
+        indexes[current_finger + 1] = 0;
+        get_valid_combinations(fingers, output, current_finger + 1, indexes, chars_buffer, len_chars_buffer + chars.chars.len());
+        indexes[current_finger] += 1;
     }
 }
 
 fn brute_force_inner(
-    output: &mut BruteForceOutput,
+    output: &mut Vec<Rc<BruteForceOutputElement>>,
     corpuses: &[CorpusData],
     thresholds:  &Thresholds,
     chars: &mut Vec<char>,
@@ -229,11 +254,11 @@ fn brute_force_inner(
         chars[current_index] = current_char;
 
         if current_index == chars.len() - 1 && load[chars.len() - 1].iter().all(|l| *l >= thresholds.min_load) {
-            output.0.push(vec![BruteForceOutputElement {
+            output.push(Rc::new(BruteForceOutputElement {
                 chars: chars.clone(),
                 load_per_corpus: load[chars.len() - 1].clone(),
                 sfu_per_corpus: sfu[chars.len() - 1].clone(),
-            }]);
+            }));
         }
         else if current_index < chars.len() - 1 {
             brute_force_inner(

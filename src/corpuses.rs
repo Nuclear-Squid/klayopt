@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+// use std::collections::HashMap;
+type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
 // ╭─────────────────────────────────────────────────────────╮
 // │                         Corpus                          │

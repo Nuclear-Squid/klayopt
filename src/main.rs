@@ -1,3 +1,4 @@
+use std::io::Write;
 pub mod corpuses;
 pub mod brute_force;
 
@@ -11,8 +12,12 @@ fn good_heatmap_index(mut index: Vec<char>, corpus_data: &CorpusData) -> bool {
 }
 
 fn main() -> Result<(), main_error::MainError> {
+    let output_file = std::fs::File::create("out.opt")?;
+    let mut writer = std::io::BufWriter::new(output_file);
+
     let specs = brute_force::SpecConfig::from_toml("spec.toml");
-    println!("{}", specs.brute_force_all());
+
+    write!(writer, "{}", specs.brute_force_all())?;
 
     Ok(())
 }

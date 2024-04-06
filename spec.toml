@@ -9,8 +9,16 @@ max_sfu  = 0.1
 
 
 [[spec]]
-finger = "RegularFinger"
+finger = "IndexFinger"
 [spec.thresholds]
 min_load = 12.0
 max_load = 19.0
+max_sfu  = 0.1
+
+
+[[spec]]
+finger = "RegularFinger"
+[spec.thresholds]
+min_load = 5.0
+max_load = 9.0
 max_sfu  = 0.1
